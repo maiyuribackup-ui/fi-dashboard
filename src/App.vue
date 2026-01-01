@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import AppHeader from './components/layout/AppHeader.vue'
 import BottomNav from './components/layout/BottomNav.vue'
+import ChatWidget from './components/chatbot/ChatWidget.vue'
 </script>
 
 <template>
@@ -10,5 +11,8 @@ import BottomNav from './components/layout/BottomNav.vue'
       <router-view />
     </main>
     <BottomNav />
+
+    <!-- AI Chatbot Widget -->
+    <ChatWidget />
   </div>
 </template>
