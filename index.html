@@ -9,13 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <script>
-      // Redirect to /dist/ in production (when not running on Vite dev server)
-      // Vite dev server runs on port 5173, production is on 80/443
-      if (location.port !== '5173' && !location.pathname.startsWith('/dist')) {
-        location.replace('/dist/');
-      }
-    </script>
+    <!-- SSH deploy to public_html - no redirect needed -->
   </head>
   <body class="bg-slate-950 text-slate-100">
     <div id="app"></div>
