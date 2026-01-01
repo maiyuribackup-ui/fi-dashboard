@@ -6,9 +6,17 @@ const apiKey = import.meta.env.VITE_GEMINI_API_KEY
 let genAI: GoogleGenerativeAI | null = null
 let model: GenerativeModel | null = null
 
+// Debug: Log API key status (not the key itself)
+console.log('[Gemini] API Key configured:', !!apiKey, apiKey ? `(${apiKey.substring(0, 8)}...)` : '')
+
 if (apiKey) {
-  genAI = new GoogleGenerativeAI(apiKey)
-  model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+  try {
+    genAI = new GoogleGenerativeAI(apiKey)
+    model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+    console.log('[Gemini] Model initialized successfully')
+  } catch (err) {
+    console.error('[Gemini] Failed to initialize:', err)
+  }
 }
 
 export interface ParsedIntent {
@@ -66,7 +74,10 @@ export function useGemini() {
   const isConfigured = ref(!!apiKey)
 
   async function parseUserInput(input: string): Promise<ParsedIntent> {
+    console.log('[Gemini] parseUserInput called with:', input)
+
     if (!model) {
+      console.warn('[Gemini] Model not initialized')
       return {
         action: 'unknown',
         confidence: 0,
@@ -78,12 +89,14 @@ export function useGemini() {
     error.value = null
 
     try {
+      console.log('[Gemini] Sending request to Gemini API...')
       const result = await model.generateContent([
         { text: SYSTEM_PROMPT },
         { text: `User: ${input}` }
       ])
 
       const response = result.response.text()
+      console.log('[Gemini] Response received:', response.substring(0, 200))
 
       // Extract JSON from response (handle markdown code blocks)
       let jsonStr = response
@@ -99,6 +112,7 @@ export function useGemini() {
       }
 
       const parsed = JSON.parse(jsonStr)
+      console.log('[Gemini] Parsed intent:', parsed)
 
       return {
         action: parsed.action || 'unknown',
@@ -107,6 +121,7 @@ export function useGemini() {
         rawResponse: parsed.message || response
       }
     } catch (err) {
+      console.error('[Gemini] Error:', err)
       error.value = err instanceof Error ? err.message : 'Failed to parse input'
       return {
         action: 'unknown',
@@ -119,7 +134,10 @@ export function useGemini() {
   }
 
   async function generateResponse(context: string, question: string): Promise<string> {
+    console.log('[Gemini] generateResponse called')
+
     if (!model) {
+      console.warn('[Gemini] Model not initialized for response')
       return 'Gemini API not configured. Please set VITE_GEMINI_API_KEY.'
     }
 
@@ -135,9 +153,13 @@ User's question: ${question}
 
 Provide a helpful, concise response. Use Indian Rupees (Rs) format. Be encouraging about their financial journey.`
 
+      console.log('[Gemini] Generating response...')
       const result = await model.generateContent(prompt)
-      return result.response.text()
+      const response = result.response.text()
+      console.log('[Gemini] Response generated:', response.substring(0, 100))
+      return response
     } catch (err) {
+      console.error('[Gemini] generateResponse error:', err)
       error.value = err instanceof Error ? err.message : 'Failed to generate response'
       return `Sorry, I encountered an error: ${error.value}`
     } finally {

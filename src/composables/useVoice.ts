@@ -44,116 +44,139 @@ declare global {
   }
 }
 
-export function useVoice() {
-  const isListening = ref(false)
-  const isSpeaking = ref(false)
-  const transcript = ref('')
-  const error = ref<string | null>(null)
-  const isSupported = ref(false)
+// Singleton state to prevent multiple instances causing ref issues
+let _isListening = ref(false)
+let _isSpeaking = ref(false)
+let _transcript = ref('')
+let _error = ref<string | null>(null)
+let _isSupported = ref(false)
+let _recognition: SpeechRecognition | null = null
+let _synthesis: SpeechSynthesis | null = null
+let _initialized = false
 
-  let recognition: SpeechRecognition | null = null
-  let synthesis: SpeechSynthesis | null = null
+function initializeVoice() {
+  if (_initialized) return
+  _initialized = true
 
   // Check browser support
   if (typeof window !== 'undefined') {
     const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition
     if (SpeechRecognitionAPI) {
-      recognition = new SpeechRecognitionAPI()
-      recognition.continuous = false
-      recognition.interimResults = true
-      recognition.lang = 'en-IN' // English (India)
-      isSupported.value = true
+      _recognition = new SpeechRecognitionAPI()
+      _recognition.continuous = false
+      _recognition.interimResults = true
+      _recognition.lang = 'en-IN' // English (India)
+      _isSupported.value = true
+
+      // Setup recognition handlers with singleton refs
+      _recognition.onstart = () => {
+        _isListening.value = true
+        _error.value = null
+      }
+
+      _recognition.onresult = (event: SpeechRecognitionEvent) => {
+        const results = event.results
+        let finalTranscript = ''
+        let interimTranscript = ''
+
+        for (let i = event.resultIndex; i < results.length; i++) {
+          const result = results[i]
+          if (result.isFinal) {
+            finalTranscript += result[0].transcript
+          } else {
+            interimTranscript += result[0].transcript
+          }
+        }
+
+        _transcript.value = finalTranscript || interimTranscript
+      }
+
+      _recognition.onerror = (event) => {
+        _error.value = `Speech recognition error: ${event.error}`
+        _isListening.value = false
+      }
+
+      _recognition.onend = () => {
+        _isListening.value = false
+      }
     }
 
     if ('speechSynthesis' in window) {
-      synthesis = window.speechSynthesis
+      _synthesis = window.speechSynthesis
     }
   }
+}
 
-  // Setup recognition handlers
-  if (recognition) {
-    recognition.onstart = () => {
-      isListening.value = true
-      error.value = null
-    }
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      const results = event.results
-      let finalTranscript = ''
-      let interimTranscript = ''
-
-      for (let i = event.resultIndex; i < results.length; i++) {
-        const result = results[i]
-        if (result.isFinal) {
-          finalTranscript += result[0].transcript
-        } else {
-          interimTranscript += result[0].transcript
-        }
-      }
-
-      transcript.value = finalTranscript || interimTranscript
-    }
-
-    recognition.onerror = (event) => {
-      error.value = `Speech recognition error: ${event.error}`
-      isListening.value = false
-    }
-
-    recognition.onend = () => {
-      isListening.value = false
-    }
-  }
+export function useVoice() {
+  // Initialize on first use
+  initializeVoice()
 
   function startListening(): Promise<string> {
     return new Promise((resolve, reject) => {
-      if (!recognition) {
+      if (!_recognition) {
         reject(new Error('Speech recognition not supported'))
         return
       }
 
-      if (isListening.value) {
+      if (_isListening.value) {
         stopListening()
       }
 
-      transcript.value = ''
-      error.value = null
+      _transcript.value = ''
+      _error.value = null
 
-      const originalOnEnd = recognition.onend
-      recognition.onend = () => {
-        isListening.value = false
-        if (originalOnEnd) originalOnEnd()
-        resolve(transcript.value)
+      // Store resolve/reject for use in handlers
+      const handleEnd = () => {
+        _isListening.value = false
+        resolve(_transcript.value)
       }
 
-      const originalOnError = recognition.onerror
-      recognition.onerror = (event) => {
-        if (originalOnError) originalOnError(event)
+      const handleError = (event: Event & { error: string }) => {
+        _isListening.value = false
         reject(new Error(event.error))
       }
 
+      // Temporarily override handlers for this promise
+      const origOnEnd = _recognition.onend
+      const origOnError = _recognition.onerror
+
+      _recognition.onend = () => {
+        _recognition!.onend = origOnEnd
+        _recognition!.onerror = origOnError
+        handleEnd()
+      }
+
+      _recognition.onerror = (event) => {
+        _recognition!.onend = origOnEnd
+        _recognition!.onerror = origOnError
+        handleError(event)
+      }
+
       try {
-        recognition.start()
+        _recognition.start()
       } catch (err) {
+        _recognition.onend = origOnEnd
+        _recognition.onerror = origOnError
         reject(err)
       }
     })
   }
 
   function stopListening() {
-    if (recognition && isListening.value) {
-      recognition.stop()
+    if (_recognition && _isListening.value) {
+      _recognition.stop()
     }
   }
 
   function speak(text: string, rate: number = 1): Promise<void> {
     return new Promise((resolve, reject) => {
-      if (!synthesis) {
+      if (!_synthesis) {
         reject(new Error('Speech synthesis not supported'))
         return
       }
 
       // Cancel any ongoing speech
-      synthesis.cancel()
+      _synthesis.cancel()
 
       const utterance = new SpeechSynthesisUtterance(text)
       utterance.rate = rate
@@ -162,7 +185,7 @@ export function useVoice() {
       utterance.lang = 'en-IN'
 
       // Try to get an Indian English voice
-      const voices = synthesis.getVoices()
+      const voices = _synthesis.getVoices()
       const indianVoice = voices.find(v => v.lang === 'en-IN') ||
                           voices.find(v => v.lang.startsWith('en'))
       if (indianVoice) {
@@ -170,42 +193,42 @@ export function useVoice() {
       }
 
       utterance.onstart = () => {
-        isSpeaking.value = true
+        _isSpeaking.value = true
       }
 
       utterance.onend = () => {
-        isSpeaking.value = false
+        _isSpeaking.value = false
         resolve()
       }
 
       utterance.onerror = (event) => {
-        isSpeaking.value = false
+        _isSpeaking.value = false
         reject(new Error(event.error))
       }
 
-      synthesis.speak(utterance)
+      _synthesis.speak(utterance)
     })
   }
 
   function stopSpeaking() {
-    if (synthesis) {
-      synthesis.cancel()
-      isSpeaking.value = false
+    if (_synthesis) {
+      _synthesis.cancel()
+      _isSpeaking.value = false
     }
   }
 
-  // Cleanup on unmount
+  // Cleanup on unmount - only stop, don't destroy singleton
   onUnmounted(() => {
     stopListening()
     stopSpeaking()
   })
 
   return {
-    isListening,
-    isSpeaking,
-    transcript,
-    error,
-    isSupported,
+    isListening: _isListening,
+    isSpeaking: _isSpeaking,
+    transcript: _transcript,
+    error: _error,
+    isSupported: _isSupported,
     startListening,
     stopListening,
     speak,
