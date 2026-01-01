@@ -12,7 +12,7 @@ console.log('[Gemini] API Key configured:', !!apiKey, apiKey ? `(${apiKey.substr
 if (apiKey) {
   try {
     genAI = new GoogleGenerativeAI(apiKey)
-    model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+    model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' })
     console.log('[Gemini] Model initialized successfully')
   } catch (err) {
     console.error('[Gemini] Failed to initialize:', err)
